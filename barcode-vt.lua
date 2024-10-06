@@ -104,6 +104,8 @@ params:set_action("quantize",update_parameters)
 params:add_option("reverse","reverse",{"off","on"},2)
 params:add_option("randomize_voices", "Randomize voices", {"Off", "On"}, 1)
 params:add_option("randomize_filter_cutoff", "Randomize filter cutoff", {"Off", "On"}, 1)
+params:add_control("random_min", "Random min interval (s)", controlspec.new(1, 10, "lin", 0.1, 1, "s"))
+params:add_control("random_max", "Random max interval (s)", controlspec.new(1, 10, "lin", 0.1, 5, "s"))
 params:add{type='binary',name='recording',id='recording',behavior='toggle',allow_pmap=true,action=function(v)
   toggle_recording(v)
 end
@@ -271,10 +273,13 @@ if params:get("randomize_voices") == 2 then
     end
     -- Update the last randomize time
     state.last_randomize_time = current_time
-    -- Set the next random interval to a value between 1 and 5 seconds
-    state.next_random_interval = math.random(1, 5)
+    -- Set the next random interval using the random min and max parameters
+    local min_interval = params:get("random_min")
+    local max_interval = params:get("random_max")
+    state.next_random_interval = math.random() * (max_interval - min_interval) + min_interval
   end
 end
+
 
 if params:get("randomize_filter_cutoff") == 2 then
   -- Randomize filter cutoff when "Randomize filter cutoff" is On
@@ -283,7 +288,6 @@ if params:get("randomize_filter_cutoff") == 2 then
     softcut.post_filter_fc(i, random_cutoff)
   end
 end
-
 
   -- update lfo counter
   if state.lfo_freeze==0 then

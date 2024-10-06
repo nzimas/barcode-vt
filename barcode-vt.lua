@@ -105,7 +105,18 @@ params:add_option("reverse","reverse",{"off","on"},2)
 params:add_option("randomize_voices", "Randomize voices", {"Off", "On"}, 1)
 params:add_option("randomize_filter_cutoff", "Randomize filter cutoff", {"Off", "On"}, 1)
 params:add_control("random_min", "Random min interval (s)", controlspec.new(1, 10, "lin", 0.1, 1, "s"))
+params:set_action("random_min", function(value)
+  if value > params:get("random_max") then
+    params:set("random_max", value)
+  end
+end)
 params:add_control("random_max", "Random max interval (s)", controlspec.new(1, 10, "lin", 0.1, 5, "s"))
+params:set_action("random_max", function(value)
+  if value < params:get("random_min") then
+    params:set("random_min", value)
+  end
+end)
+
 params:add{type='binary',name='recording',id='recording',behavior='toggle',allow_pmap=true,action=function(v)
   toggle_recording(v)
 end
@@ -258,34 +269,37 @@ function update_lfo()
     redraw()
     do return end
   end
-if params:get("randomize_voices") == 2 then
+if params:get("randomize_voices") == 2 or params:get("randomize_filter_cutoff") == 2 then
   -- Get the current time in seconds
   local current_time = util.time()
   if current_time - state.last_randomize_time >= state.next_random_interval then
     -- Randomize voice toggles when "Randomize voices" is On
-    for i = 1, 6 do
-      voice[i].enabled = (math.random() > 0.5)
-      if voice[i].enabled then
-        softcut.level(i, state.level * voice[i].level.calc)
-      else
-        softcut.level(i, 0)
+    if params:get("randomize_voices") == 2 then
+      for i = 1, 6 do
+        voice[i].enabled = (math.random() > 0.5)
+        if voice[i].enabled then
+          softcut.level(i, state.level * voice[i].level.calc)
+        else
+          softcut.level(i, 0)
+        end
       end
     end
+
+    -- Randomize filter cutoff when "Randomize filter cutoff" is On
+    if params:get("randomize_filter_cutoff") == 2 then
+      local random_cutoff = math.random(20, 20000)  -- Random value between 20 Hz and 20 kHz
+      for i = 1, 6 do
+        softcut.post_filter_fc(i, random_cutoff)
+      end
+    end
+
     -- Update the last randomize time
     state.last_randomize_time = current_time
+
     -- Set the next random interval using the random min and max parameters
     local min_interval = params:get("random_min")
     local max_interval = params:get("random_max")
     state.next_random_interval = math.random() * (max_interval - min_interval) + min_interval
-  end
-end
-
-
-if params:get("randomize_filter_cutoff") == 2 then
-  -- Randomize filter cutoff when "Randomize filter cutoff" is On
-  local random_cutoff = math.random(20, 20000)  -- Random value between 20 Hz and 20 kHz
-  for i = 1, 6 do
-    softcut.post_filter_fc(i, random_cutoff)
   end
 end
 

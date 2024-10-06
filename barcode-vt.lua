@@ -48,6 +48,7 @@ const_num_rates=6
 prevent_saveload=false
 DATA_DIR=_path.data.."barcode/"
 state.last_randomize_time = 0
+state.next_random_interval = 3
 
 function init()
   os.execute("mkdir -p "..DATA_DIR)
@@ -258,7 +259,7 @@ function update_lfo()
 if params:get("randomize_voices") == 2 then
   -- Get the current time in seconds
   local current_time = util.time()
-  if current_time - state.last_randomize_time >= 3 then
+  if current_time - state.last_randomize_time >= state.next_random_interval then
     -- Randomize voice toggles when "Randomize voices" is On
     for i = 1, 6 do
       voice[i].enabled = (math.random() > 0.5)
@@ -270,9 +271,10 @@ if params:get("randomize_voices") == 2 then
     end
     -- Update the last randomize time
     state.last_randomize_time = current_time
+    -- Set the next random interval to a value between 1 and 5 seconds
+    state.next_random_interval = math.random(1, 5)
   end
 end
-
 
 if params:get("randomize_filter_cutoff") == 2 then
   -- Randomize filter cutoff when "Randomize filter cutoff" is On

@@ -276,7 +276,10 @@ if params:get("randomize_voices") == 2 or params:get("randomize_filter_cutoff") 
     -- Randomize voice toggles when "Randomize voices" is On
     if params:get("randomize_voices") == 2 then
       for i = 1, 6 do
-        voice[i].enabled = (math.random() > 0.5)
+        local new_state = (math.random() > 0.5) and 1 or 0  -- 1 for on, 0 for off
+        voice[i].enabled = (new_state == 1)
+        params:set("voice_toggle_"..i, new_state)  -- Update the parameter to reflect the new state
+
         if voice[i].enabled then
           softcut.level(i, state.level * voice[i].level.calc)
         else
@@ -302,6 +305,7 @@ if params:get("randomize_voices") == 2 or params:get("randomize_filter_cutoff") 
     state.next_random_interval = math.random() * (max_interval - min_interval) + min_interval
   end
 end
+
 
   -- update lfo counter
   if state.lfo_freeze==0 then

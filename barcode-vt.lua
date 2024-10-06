@@ -190,6 +190,21 @@ end}
 
   voice[i].enabled = true
 end
+
+-- Set all voice toggles to Off by default
+for i = 1, 6 do
+  voice[i].enabled = false
+  params:set("voice_toggle_"..i, 0)
+  softcut.level(i, 0)
+end
+
+-- Randomly select one voice to be enabled
+local random_voice = math.random(1, 6)
+voice[random_voice].enabled = true
+params:set("voice_toggle_"..random_voice, 1)
+softcut.level(random_voice, state.level * voice[random_voice].level.calc)
+
+
 -- initialize voice 1 = standard
 -- intitialize voice 2-6 = decreasing in volume, increasing in pitch
 voice[1].level.set=0.6

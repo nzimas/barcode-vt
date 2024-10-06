@@ -102,6 +102,8 @@ params:set_action('import2',function(f) import(f,2) end)
 params:add_option("quantize","lfo bpm sync.",{"off","on"},1)
 params:set_action("quantize",update_parameters)
 params:add_option("reverse","reverse",{"off","on"},2)
+params:add_control("reverse_probability", "Reverse prob", controlspec.new(0, 100, "lin", 1, 20, "%"))
+params:add_control("random_gate_probability", "Random gate prob", controlspec.new(0, 100, "lin", 1, 30, "%"))
 params:add_option("randomize_voices", "Randomize voices", {"Off", "On"}, 1)
 params:add_option("randomize_filter_cutoff", "Randomize filter cutoff", {"Off", "On"}, 1)
 params:set_action("randomize_filter_cutoff", function(value)
@@ -371,25 +373,30 @@ end
             end
           end
           voice[i].rate.calc=util.clamp(round(voice[i].rate.set*voice[i].rate.lfo+voice[i].rate.adj),1,const_num_rates)
-        elseif j==4 then
-          -- sign lfo oscillates between 0 and 2, since initial sign is -1
-          if state.lfo_freeze==0 then
-            if params:get("quantize")==1 then
-              voice[i].sign.lfo=1+calculate_lfo(voice[i].sign.lfo_period,voice[i].sign.lfo_offset)
-            else
-              voice[i].sign.lfo=1+calculate_lfo(beat_sec*voice[i].sign.lfo_period,beat_sec*voice[i].sign.lfo_offset)
-            end
-          end
-          voice[i].sign.calc=util.clamp(voice[i].sign.set+voice[i].sign.lfo+voice[i].sign.adj,-1,1)
-          if voice[i].sign.calc<0.5 then -- 0.5 is to bias towards reverse
-            voice[i].sign.calc=-1
-          else
-            voice[i].sign.calc=1
-          end
-          if params:get("reverse")==1 then
-            voice[i].sign.calc=math.abs(voice[i].sign.calc)
-          end
-          softcut.rate(i,voice[i].sign.calc*rates[voice[i].rate.calc])
+        elseif j == 4 then
+  -- sign lfo oscillates between 0 and 2, since initial sign is -1
+  if state.lfo_freeze == 0 then
+    if params:get("quantize") == 1 then
+      voice[i].sign.lfo = 1 + calculate_lfo(voice[i].sign.lfo_period, voice[i].sign.lfo_offset)
+    else
+      voice[i].sign.lfo = 1 + calculate_lfo(beat_sec * voice[i].sign.lfo_period, beat_sec * voice[i].sign.lfo_offset)
+    end
+  end
+  voice[i].sign.calc = util.clamp(voice[i].sign.set + voice[i].sign.lfo + voice[i].sign.adj, -1, 1)
+
+  if voice[i].sign.calc < 0.5 then -- 0.5 is to bias towards reverse
+    voice[i].sign.calc = -1
+  else
+    voice[i].sign.calc = 1
+  end
+
+  -- Apply reverse based on probability
+  local reverse_prob = params:get("reverse_probability")
+  if math.random(100) > reverse_prob then
+    voice[i].sign.calc = math.abs(voice[i].sign.calc)
+  end
+
+  softcut.rate(i, voice[i].sign.calc * rates[voice[i].rate.calc])
         elseif j==6 then
           if state.lfo_freeze==0 then
             if params:get("quantize")==1 then

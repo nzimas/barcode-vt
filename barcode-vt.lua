@@ -104,6 +104,14 @@ params:set_action("quantize",update_parameters)
 params:add_option("reverse","reverse",{"off","on"},2)
 params:add_option("randomize_voices", "Randomize voices", {"Off", "On"}, 1)
 params:add_option("randomize_filter_cutoff", "Randomize filter cutoff", {"Off", "On"}, 1)
+params:set_action("randomize_filter_cutoff", function(value)
+  if value == 1 then  -- When set to "Off"
+    local cutoff_value = params:get("filter_frequency")
+    for i = 1, 6 do
+      softcut.post_filter_fc(i, cutoff_value)
+    end
+  end
+end)
 params:add_control("random_min", "Random min interval (s)", controlspec.new(1, 10, "lin", 0.1, 1, "s"))
 params:set_action("random_min", function(value)
   if value > params:get("random_max") then

@@ -49,6 +49,8 @@ prevent_saveload=false
 DATA_DIR=_path.data.."barcode/"
 state.last_randomize_time = 0
 state.next_random_interval = 3
+state.current_filter_cutoff = 20000  -- Initial filter cutoff
+state.target_filter_cutoff = 20000  -- Target filter cutoff to transition towards
 
 function init()
   os.execute("mkdir -p "..DATA_DIR)
@@ -102,8 +104,6 @@ params:set_action('import2',function(f) import(f,2) end)
 params:add_option("quantize","lfo bpm sync.",{"off","on"},1)
 params:set_action("quantize",update_parameters)
 params:add_option("reverse","reverse",{"off","on"},2)
-params:add_control("reverse_probability", "Reverse prob", controlspec.new(0, 100, "lin", 1, 20, "%"))
-params:add_control("random_gate_probability", "Random gate prob", controlspec.new(0, 100, "lin", 1, 30, "%"))
 params:add_option("randomize_voices", "Randomize voices", {"Off", "On"}, 1)
 params:add_option("randomize_filter_cutoff", "Randomize filter cutoff", {"Off", "On"}, 1)
 params:set_action("randomize_filter_cutoff", function(value)
@@ -114,6 +114,7 @@ params:set_action("randomize_filter_cutoff", function(value)
     end
   end
 end)
+params:add_control("filter_cutoff_sweep_speed", "Filter cutoff sweep", controlspec.new(0.1, 10, "lin", 0.1, 2, "s"))
 params:add_control("random_min", "Random min interval (s)", controlspec.new(1, 10, "lin", 0.1, 1, "s"))
 params:set_action("random_min", function(value)
   if value > params:get("random_max") then
@@ -295,42 +296,50 @@ function update_lfo()
     do return end
   end
 if params:get("randomize_voices") == 2 or params:get("randomize_filter_cutoff") == 2 then
-  -- Get the current time in seconds
-  local current_time = util.time()
-  if current_time - state.last_randomize_time >= state.next_random_interval then
-    -- Randomize voice toggles when "Randomize voices" is On
-    if params:get("randomize_voices") == 2 then
-      for i = 1, 6 do
-        local new_state = (math.random() > 0.5) and 1 or 0  -- 1 for on, 0 for off
-        voice[i].enabled = (new_state == 1)
-        params:set("voice_toggle_"..i, new_state)  -- Update the parameter to reflect the new state
+    -- Get the current time in seconds
+    local current_time = util.time()
+    if current_time - state.last_randomize_time >= state.next_random_interval then
+      -- Randomize voice toggles when "Randomize voices" is On
+      if params:get("randomize_voices") == 2 then
+        for i = 1, 6 do
+          local new_state = (math.random() > 0.5) and 1 or 0  -- 1 for on, 0 for off
+          voice[i].enabled = (new_state == 1)
+          params:set("voice_toggle_"..i, new_state)  -- Update the parameter to reflect the new state
 
-        if voice[i].enabled then
-          softcut.level(i, state.level * voice[i].level.calc)
-        else
-          softcut.level(i, 0)
+          if voice[i].enabled then
+            softcut.level(i, state.level * voice[i].level.calc)
+          else
+            softcut.level(i, 0)
+          end
         end
       end
-    end
 
-    -- Randomize filter cutoff when "Randomize filter cutoff" is On
-    if params:get("randomize_filter_cutoff") == 2 then
-      local random_cutoff = math.random(20, 20000)  -- Random value between 20 Hz and 20 kHz
-      for i = 1, 6 do
-        softcut.post_filter_fc(i, random_cutoff)
+      -- Randomize filter cutoff when "Randomize filter cutoff" is On
+      if params:get("randomize_filter_cutoff") == 2 then
+        local random_cutoff_min, random_cutoff_max = 20, 20000
+        -- Set a new target filter cutoff
+        state.target_filter_cutoff = math.random(random_cutoff_min, random_cutoff_max)
       end
+
+      -- Update the last randomize time
+      state.last_randomize_time = current_time
+
+      -- Set the next random interval using the random min and max parameters
+      local min_interval = params:get("random_min")
+      local max_interval = params:get("random_max")
+      state.next_random_interval = math.random() * (max_interval - min_interval) + min_interval
     end
-
-    -- Update the last randomize time
-    state.last_randomize_time = current_time
-
-    -- Set the next random interval using the random min and max parameters
-    local min_interval = params:get("random_min")
-    local max_interval = params:get("random_max")
-    state.next_random_interval = math.random() * (max_interval - min_interval) + min_interval
   end
-end
 
+  -- Smoothly transition the filter cutoff to the target value
+  local sweep_speed = params:get("filter_cutoff_sweep_speed")
+  local cutoff_step = (state.target_filter_cutoff - state.current_filter_cutoff) * (const_lfo_inc / sweep_speed)
+  state.current_filter_cutoff = state.current_filter_cutoff + cutoff_step
+
+  -- Apply the updated filter cutoff value to all voices
+  for i = 1, 6 do
+    softcut.post_filter_fc(i, state.current_filter_cutoff)
+  end
 
   -- update lfo counter
   if state.lfo_freeze==0 then
@@ -373,30 +382,25 @@ end
             end
           end
           voice[i].rate.calc=util.clamp(round(voice[i].rate.set*voice[i].rate.lfo+voice[i].rate.adj),1,const_num_rates)
-        elseif j == 4 then
-  -- sign lfo oscillates between 0 and 2, since initial sign is -1
-  if state.lfo_freeze == 0 then
-    if params:get("quantize") == 1 then
-      voice[i].sign.lfo = 1 + calculate_lfo(voice[i].sign.lfo_period, voice[i].sign.lfo_offset)
-    else
-      voice[i].sign.lfo = 1 + calculate_lfo(beat_sec * voice[i].sign.lfo_period, beat_sec * voice[i].sign.lfo_offset)
-    end
-  end
-  voice[i].sign.calc = util.clamp(voice[i].sign.set + voice[i].sign.lfo + voice[i].sign.adj, -1, 1)
-
-  if voice[i].sign.calc < 0.5 then -- 0.5 is to bias towards reverse
-    voice[i].sign.calc = -1
-  else
-    voice[i].sign.calc = 1
-  end
-
-  -- Apply reverse based on probability
-  local reverse_prob = params:get("reverse_probability")
-  if math.random(100) > reverse_prob then
-    voice[i].sign.calc = math.abs(voice[i].sign.calc)
-  end
-
-  softcut.rate(i, voice[i].sign.calc * rates[voice[i].rate.calc])
+        elseif j==4 then
+          -- sign lfo oscillates between 0 and 2, since initial sign is -1
+          if state.lfo_freeze==0 then
+            if params:get("quantize")==1 then
+              voice[i].sign.lfo=1+calculate_lfo(voice[i].sign.lfo_period,voice[i].sign.lfo_offset)
+            else
+              voice[i].sign.lfo=1+calculate_lfo(beat_sec*voice[i].sign.lfo_period,beat_sec*voice[i].sign.lfo_offset)
+            end
+          end
+          voice[i].sign.calc=util.clamp(voice[i].sign.set+voice[i].sign.lfo+voice[i].sign.adj,-1,1)
+          if voice[i].sign.calc<0.5 then -- 0.5 is to bias towards reverse
+            voice[i].sign.calc=-1
+          else
+            voice[i].sign.calc=1
+          end
+          if params:get("reverse")==1 then
+            voice[i].sign.calc=math.abs(voice[i].sign.calc)
+          end
+          softcut.rate(i,voice[i].sign.calc*rates[voice[i].rate.calc])
         elseif j==6 then
           if state.lfo_freeze==0 then
             if params:get("quantize")==1 then
